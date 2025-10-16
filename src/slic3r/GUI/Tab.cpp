@@ -33,6 +33,7 @@
 
 #include "slic3r/Utils/Http.hpp"
 #include "slic3r/Utils/PrintHost.hpp"
+#include "slic3r/Utils/CloudSyncManager.hpp"
 #include "BonjourDialog.hpp"
 #include "WipeTowerDialog.hpp"
 #include "ButtonsDescription.hpp"
@@ -4597,6 +4598,11 @@ void Tab::delete_preset()
         physical_printers.select_printer(printer);
 
         this->select_preset(physical_printers.get_selected_printer_preset_name());
+
+        // Track deletion and trigger auto-sync
+        std::string preset_filename = current_preset.name + ".ini";
+        CloudSyncManager::instance().track_preset_deletion(m_name, preset_filename);
+        CloudSyncManager::instance().trigger_auto_sync();
         return;
     }
 
@@ -4607,6 +4613,11 @@ void Tab::delete_preset()
     // Select will handle of the preset dependencies, of saving & closing the depending profiles, and
     // finally of deleting the preset.
     this->select_preset("", true);
+
+    // Track deletion and trigger auto-sync
+    std::string preset_filename = current_preset.name + ".ini";
+    CloudSyncManager::instance().track_preset_deletion(m_name, preset_filename);
+    CloudSyncManager::instance().trigger_auto_sync();
 }
 
 void Tab::toggle_show_hide_incompatible()
