@@ -33,6 +33,7 @@
 
 #include "slic3r/Utils/Http.hpp"
 #include "slic3r/Utils/PrintHost.hpp"
+#include "slic3r/Utils/CloudSyncManager.hpp"
 #include "BonjourDialog.hpp"
 #include "WipeTowerDialog.hpp"
 #include "ButtonsDescription.hpp"
@@ -4432,6 +4433,9 @@ void Tab::save_preset(std::string name /*= ""*/, bool detach)
 
     if (detach)
         update_description_lines();
+
+    // Trigger cloud sync after saving preset
+    CloudSyncManager::instance().trigger_auto_sync();
 }
 
 void Tab::rename_preset()
@@ -4520,6 +4524,10 @@ void Tab::rename_preset()
 
     m_presets_choice->update();
     on_presets_changed();
+
+    // Trigger cloud sync after renaming preset
+    if (was_renamed)
+        CloudSyncManager::instance().trigger_auto_sync();
 }
 
 // Called for a currently selected preset.
@@ -4597,16 +4605,19 @@ void Tab::delete_preset()
         physical_printers.select_printer(printer);
 
         this->select_preset(physical_printers.get_selected_printer_preset_name());
-        return;
+    }
+    else {
+        // delete selected preset from printers and printer, if it's needed
+        if (m_type == Preset::TYPE_PRINTER && !physical_printers.empty())
+            physical_printers.delete_preset_from_printers(current_preset.name);
+
+        // Select will handle of the preset dependencies, of saving & closing the depending profiles, and
+        // finally of deleting the preset.
+        this->select_preset("", true);
     }
 
-    // delete selected preset from printers and printer, if it's needed
-    if (m_type == Preset::TYPE_PRINTER && !physical_printers.empty())
-        physical_printers.delete_preset_from_printers(current_preset.name);
-
-    // Select will handle of the preset dependencies, of saving & closing the depending profiles, and
-    // finally of deleting the preset.
-    this->select_preset("", true);
+    // Trigger auto-sync after delete operation completes
+    CloudSyncManager::instance().trigger_auto_sync();
 }
 
 void Tab::toggle_show_hide_incompatible()

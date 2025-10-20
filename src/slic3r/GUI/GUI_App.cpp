@@ -81,6 +81,7 @@
 #include "../Utils/MacDarkMode.hpp"
 #include "../Utils/AppUpdater.hpp"
 #include "../Utils/WinRegistry.hpp"
+#include "../Utils/CloudSyncManager.hpp"
 #include "slic3r/Config/Snapshot.hpp"
 #include "ConfigSnapshotDialog.hpp"
 #include "FirmwareDialog.hpp"
@@ -768,6 +769,12 @@ void GUI_App::post_init()
     assert(initialized());
     if (! this->initialized())
         throw Slic3r::RuntimeError("Calling post_init() while not yet initialized");
+
+    // Initialize cloud sync manager
+    CloudSyncManager::instance().initialize(app_config);
+
+    // Trigger automatic sync on startup if enabled
+    CloudSyncManager::instance().trigger_auto_sync();
 
     if (this->is_gcode_viewer()) {
         if (! this->init_params->input_files.empty())

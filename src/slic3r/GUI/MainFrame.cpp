@@ -49,6 +49,7 @@
 #include "GLCanvas3D.hpp"
 #include "Plater.hpp"
 #include "../Utils/Process.hpp"
+#include "../Utils/CloudSyncManager.hpp"
 #include "format.hpp"
 #include "slic3r/GUI/InstanceCheck.hpp" // IWYU pragma: keep
 
@@ -2109,6 +2110,9 @@ void MainFrame::load_configbundle(wxString file/* = wxEmptyString, const bool re
 
     const auto message = wxString::Format(_L("%d presets successfully imported."), presets_imported);
     Slic3r::GUI::show_info(this, message, wxString("Info"));
+
+    // Trigger cloud sync after importing bundle
+    CloudSyncManager::instance().trigger_auto_sync();
 }
 
 // Load a provied DynamicConfig into the Print / Filament / Printer tabs, thus modifying the active preset.

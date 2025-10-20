@@ -267,6 +267,14 @@ size_t Http::priv::form_file_read_cb(char *buffer, size_t size, size_t nitems, v
 	try {
 		stream->read(buffer, size * nitems);
 	} catch (const std::exception &) {
+		std::cerr << "[CloudSync] ERROR: Exception during file read callback" << std::endl;
+		return CURL_READFUNC_ABORT;
+	}
+
+	// CRITICAL FIX #2: Check stream state for read errors
+	// Note: fail() is set at EOF, which is normal. Only check bad() for actual errors.
+	if (stream->bad()) {
+		std::cerr << "[CloudSync] ERROR: Stream error during read: bad=" << stream->bad() << std::endl;
 		return CURL_READFUNC_ABORT;
 	}
 
@@ -329,6 +337,14 @@ void Http::priv::set_put_body(const fs::path &path)
 	boost::uintmax_t filesize = file_size(path, ec);
 	if (!ec) {
         putFile = std::make_unique<fs::ifstream>(path, std::ios::binary);
+
+        // CRITICAL FIX #1: Validate file stream opened successfully
+        if (!putFile->is_open()) {
+            std::cerr << "[CloudSync] ERROR: Failed to open file for upload: " << path.string() << std::endl;
+            putFile = nullptr;  // Clear the failed stream
+            return;
+        }
+
         ::curl_easy_setopt(curl, CURLOPT_READDATA, (void *) (putFile.get()));
 		::curl_easy_setopt(curl, CURLOPT_INFILESIZE, filesize);
 	}
@@ -737,6 +753,12 @@ Http Http::put(std::string url)
 	Http http{std::move(url)};
 	curl_easy_setopt(http.p->curl, CURLOPT_UPLOAD, 1L);
 	return http;
+}
+
+Http& Http::custom_request(const std::string &method)
+{
+	curl_easy_setopt(p->curl, CURLOPT_CUSTOMREQUEST, method.c_str());
+	return *this;
 }
 
 bool Http::ca_file_supported()

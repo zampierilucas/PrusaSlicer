@@ -47,7 +47,12 @@ class PreferencesDialog : public DPIDialog
 	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_general;
 	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_camera;
 	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_gui;
+	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_cloudsync;
 	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_other;
+
+	wxTextCtrl*							m_cloudsync_url {nullptr};
+	wxTextCtrl*							m_cloudsync_username {nullptr};
+	wxTextCtrl*							m_cloudsync_password {nullptr};
 #ifdef _WIN32
 	std::shared_ptr<ConfigOptionsGroup>	m_optgroup_dark_mode;
 #endif //_WIN32
@@ -106,6 +111,7 @@ protected:
     void create_settings_mode_color_widget();
     void create_settings_font_widget();
     void create_downloader_path_sizer();
+    void create_cloudsync_credentials_widget();
 	void init_highlighter(const t_config_option_key& opt_key);
 	std::vector<ConfigOptionsGroup*> optgroups();
 

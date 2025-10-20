@@ -485,6 +485,37 @@ void PreferencesDialog::build()
 
 	activate_options_tab(m_optgroup_camera);
 
+	// Add "Cloud Sync" tab
+	if (is_editor) {
+		m_optgroup_cloudsync = create_options_tab(L("Cloud Sync"), tabs);
+		m_optgroup_cloudsync->on_change = [this](t_config_option_key opt_key, boost::any value) {
+			if (auto it = m_values.find(opt_key); it != m_values.end()) {
+				m_values.erase(it); // we shouldn't change value, if some of those parameters were selected, and then deselected
+				return;
+			}
+			if (opt_key.find("cloud_sync.") == 0 && opt_key != "cloud_sync.url" && opt_key != "cloud_sync.username" && opt_key != "cloud_sync.password") {
+				m_values[opt_key] = boost::any_cast<bool>(value) ? "1" : "0";
+			} else {
+				m_values[opt_key] = boost::any_cast<std::string>(value);
+			}
+		};
+
+		append_bool_option(m_optgroup_cloudsync, "cloud_sync.enabled",
+			L("Enable Cloud Sync"),
+			L("If enabled, presets will be automatically synchronized with WebDAV cloud storage"),
+			app_config->get_bool("cloud_sync", "enabled"));
+
+		append_bool_option(m_optgroup_cloudsync, "cloud_sync.auto_sync",
+			L("Auto-sync on changes"),
+			L("If enabled, presets will be synchronized automatically when changes are detected"),
+			app_config->get_bool("cloud_sync", "auto_sync"));
+
+		m_optgroup_cloudsync->append_separator();
+
+		activate_options_tab(m_optgroup_cloudsync);
+		create_cloudsync_credentials_widget();
+	}
+
 	// Add "GUI" tab
 	m_optgroup_gui = create_options_tab(L("GUI"), tabs);
 	m_optgroup_gui->on_change = [this](t_config_option_key opt_key, boost::any value) {
@@ -723,8 +754,8 @@ void PreferencesDialog::build()
 std::vector<ConfigOptionsGroup*> PreferencesDialog::optgroups()
 {
 	std::vector<ConfigOptionsGroup*> out;
-	out.reserve(4);
-	for (ConfigOptionsGroup* opt : { m_optgroup_general.get(), m_optgroup_camera.get(), m_optgroup_gui.get(), m_optgroup_other.get()
+	out.reserve(5);
+	for (ConfigOptionsGroup* opt : { m_optgroup_general.get(), m_optgroup_camera.get(), m_optgroup_cloudsync.get(), m_optgroup_gui.get(), m_optgroup_other.get()
 #ifdef _WIN32
 		, m_optgroup_dark_mode.get()
 #endif // _WIN32
@@ -741,12 +772,14 @@ void PreferencesDialog::update_ctrls_alignment()
 {
 	int max_ctrl_width{ 0 };
 	for (ConfigOptionsGroup* og : this->optgroups())
-		if (int max = og->custom_ctrl->get_max_win_width();
-			max_ctrl_width < max)
-			max_ctrl_width = max;
+		if (og->custom_ctrl)
+			if (int max = og->custom_ctrl->get_max_win_width();
+				max_ctrl_width < max)
+				max_ctrl_width = max;
 	if (max_ctrl_width)
 		for (ConfigOptionsGroup* og : this->optgroups())
-			og->custom_ctrl->set_max_win_width(max_ctrl_width);
+			if (og->custom_ctrl)
+				og->custom_ctrl->set_max_win_width(max_ctrl_width);
 }
 
 void PreferencesDialog::accept(wxEvent&)
@@ -806,8 +839,14 @@ void PreferencesDialog::accept(wxEvent&)
 		wxGetApp().force_sys_colors_update();
 #endif
 
-	for (std::map<std::string, std::string>::iterator it = m_values.begin(); it != m_values.end(); ++it)
-		app_config->set(it->first, it->second);
+	for (std::map<std::string, std::string>::iterator it = m_values.begin(); it != m_values.end(); ++it) {
+		if (it->first.find("cloud_sync.") == 0) {
+			std::string key = it->first.substr(11);
+			app_config->set("cloud_sync", key, it->second);
+		} else {
+			app_config->set(it->first, it->second);
+		}
+	}
 
 	if (wxGetApp().is_editor()) {
 		wxGetApp().set_label_clr_sys(m_sys_colour->GetColour());
@@ -862,6 +901,19 @@ void PreferencesDialog::revert(wxEvent&)
 		}
 		if (key == "notify_release") {
 			m_optgroup_gui->set_value(key, s_keys_map_NotifyReleaseMode.at(app_config->get(key)));
+			continue;
+		}
+		if (key.find("cloud_sync.") == 0) {
+			std::string opt_key = key.substr(11);
+			if (opt_key == "url") {
+				m_cloudsync_url->SetValue(app_config->get("cloud_sync", opt_key));
+			} else if (opt_key == "username") {
+				m_cloudsync_username->SetValue(app_config->get("cloud_sync", opt_key));
+			} else if (opt_key == "password") {
+				m_cloudsync_password->SetValue(app_config->get("cloud_sync", opt_key));
+			} else {
+				m_optgroup_cloudsync->set_value(key, app_config->get_bool("cloud_sync", opt_key));
+			}
 			continue;
 		}
 		if (key == "old_settings_layout_mode") {
@@ -1160,6 +1212,100 @@ void PreferencesDialog::create_settings_font_widget()
 	append_preferences_option_to_searcher(m_optgroup_other, opt_key, title);
 }
 
+void PreferencesDialog::create_cloudsync_credentials_widget()
+{
+	wxWindow* parent = m_optgroup_cloudsync->parent();
+	wxGetApp().UpdateDarkUI(parent);
+
+	const wxString title = L("Server credentials");
+	wxStaticBox* stb = new wxStaticBox(parent, wxID_ANY, _(title));
+	if (!wxOSX) stb->SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+	const std::string opt_key = "cloud_sync_credentials";
+	m_blinkers[opt_key] = new BlinkingBitmap(parent);
+
+	wxSizer* stb_sizer = new wxStaticBoxSizer(stb, wxVERTICAL);
+	auto app_config = get_app_config();
+	const int em = em_unit();
+
+	// WebDAV URL
+	{
+		auto* url_label = new wxStaticText(parent, wxID_ANY, _L("WebDAV URL") + ":");
+		m_cloudsync_url = new wxTextCtrl(parent, wxID_ANY);
+		m_cloudsync_url->SetValue(app_config->get("cloud_sync", "url"));
+		m_cloudsync_url->SetToolTip(_L("WebDAV server URL for preset synchronization (e.g., https://your-server.com/webdav)"));
+
+		m_cloudsync_url->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+			m_values["cloud_sync.url"] = m_cloudsync_url->GetValue().ToStdString();
+		});
+
+		wxBoxSizer* url_sizer = new wxBoxSizer(wxHORIZONTAL);
+		url_sizer->Add(url_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, em);
+		url_sizer->Add(m_cloudsync_url, 1, wxEXPAND, 0);
+
+		wxGetApp().UpdateDarkUI(url_label);
+		wxGetApp().UpdateDarkUI(m_cloudsync_url);
+		url_label->SetFont(wxGetApp().normal_font());
+		m_cloudsync_url->SetFont(wxGetApp().normal_font());
+
+		stb_sizer->Add(url_sizer, 0, wxEXPAND | wxALL, em);
+	}
+
+	// Username
+	{
+		auto* username_label = new wxStaticText(parent, wxID_ANY, _L("Username") + ":");
+		m_cloudsync_username = new wxTextCtrl(parent, wxID_ANY);
+		m_cloudsync_username->SetValue(app_config->get("cloud_sync", "username"));
+		m_cloudsync_username->SetToolTip(_L("Username for WebDAV authentication"));
+
+		m_cloudsync_username->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+			m_values["cloud_sync.username"] = m_cloudsync_username->GetValue().ToStdString();
+		});
+
+		wxBoxSizer* username_sizer = new wxBoxSizer(wxHORIZONTAL);
+		username_sizer->Add(username_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, em);
+		username_sizer->Add(m_cloudsync_username, 1, wxEXPAND, 0);
+
+		wxGetApp().UpdateDarkUI(username_label);
+		wxGetApp().UpdateDarkUI(m_cloudsync_username);
+		username_label->SetFont(wxGetApp().normal_font());
+		m_cloudsync_username->SetFont(wxGetApp().normal_font());
+
+		stb_sizer->Add(username_sizer, 0, wxEXPAND | wxALL, em);
+	}
+
+	// Password
+	{
+		auto* password_label = new wxStaticText(parent, wxID_ANY, _L("Password") + ":");
+		m_cloudsync_password = new wxTextCtrl(parent, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxTE_PASSWORD);
+		m_cloudsync_password->SetValue(app_config->get("cloud_sync", "password"));
+		m_cloudsync_password->SetToolTip(_L("Password for WebDAV authentication"));
+
+		m_cloudsync_password->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+			m_values["cloud_sync.password"] = m_cloudsync_password->GetValue().ToStdString();
+		});
+
+		wxBoxSizer* password_sizer = new wxBoxSizer(wxHORIZONTAL);
+		password_sizer->Add(password_label, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, em);
+		password_sizer->Add(m_cloudsync_password, 1, wxEXPAND, 0);
+
+		wxGetApp().UpdateDarkUI(password_label);
+		wxGetApp().UpdateDarkUI(m_cloudsync_password);
+		password_label->SetFont(wxGetApp().normal_font());
+		m_cloudsync_password->SetFont(wxGetApp().normal_font());
+
+		stb_sizer->Add(password_sizer, 0, wxEXPAND | wxALL, em);
+	}
+
+	auto sizer = new wxBoxSizer(wxHORIZONTAL);
+	sizer->Add(m_blinkers[opt_key], 0, wxRIGHT, 2);
+	sizer->Add(stb_sizer, 1, wxALIGN_CENTER_VERTICAL);
+
+	m_optgroup_cloudsync->sizer->Add(sizer, 0, wxEXPAND | wxTOP, em_unit());
+
+	append_preferences_option_to_searcher(m_optgroup_cloudsync, opt_key, title);
+}
+
 void PreferencesDialog::create_downloader_path_sizer()
 {
 	wxWindow* parent = m_optgroup_other->parent();
@@ -1187,7 +1333,7 @@ void PreferencesDialog::init_highlighter(const t_config_option_key& opt_key)
 			return;
 		}
 
-	for (auto opt_group : { m_optgroup_general, m_optgroup_camera, m_optgroup_gui, m_optgroup_other
+	for (auto opt_group : { m_optgroup_general, m_optgroup_camera, m_optgroup_cloudsync, m_optgroup_gui, m_optgroup_other
 #ifdef _WIN32
 		, m_optgroup_dark_mode
 #endif // _WIN32

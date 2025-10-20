@@ -80,6 +80,9 @@ public:
 	static Http put(std::string url);
 	~Http();
 
+	// Set a custom HTTP method (like PROPFIND, DELETE, MKCOL for WebDAV, etc.)
+	Http& custom_request(const std::string &method);
+
 	Http(const Http &) = delete;
 	Http& operator=(const Http &) = delete;
 	Http& operator=(Http &&) = delete;
