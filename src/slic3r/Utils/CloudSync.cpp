@@ -8,14 +8,15 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/algorithm/hex.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/format.hpp>
+#include <boost/uuid/detail/md5.hpp>
 
 #include <wx/string.h>
 
-#include <openssl/md5.h>
 #include <sstream>
 #include <ctime>
 #include <iomanip>
@@ -27,8 +28,7 @@ namespace Slic3r {
 // Calculate MD5 hash from data, skipping PrusaSlicer timestamp header for deterministic comparison
 std::string calculate_config_bundle_hash(const char* data, size_t size)
 {
-    MD5_CTX md5Context;
-    MD5_Init(&md5Context);
+    using boost::uuids::detail::md5;
 
     // Check if data starts with timestamp header and skip it
     const char* data_start = data;
@@ -45,18 +45,15 @@ std::string calculate_config_bundle_hash(const char* data, size_t size)
         }
     }
 
-    MD5_Update(&md5Context, data_start, data_size);
+    md5 md5_hash;
+    md5::digest_type md5_digest{};
+    md5_hash.process_bytes(data_start, data_size);
+    md5_hash.get_digest(md5_digest);
 
-    unsigned char result[MD5_DIGEST_LENGTH];
-    MD5_Final(result, &md5Context);
+    std::string md5_digest_str;
+    boost::algorithm::hex(md5_digest, md5_digest + std::size(md5_digest), std::back_inserter(md5_digest_str));
 
-    std::ostringstream sout;
-    sout << std::hex << std::setfill('0');
-    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
-        sout << std::setw(2) << (int)result[i];
-    }
-
-    return sout.str();
+    return md5_digest_str;
 }
 
 // Parse HTTP date format (RFC 2616/RFC 1123)

@@ -17,7 +17,6 @@
 #include <boost/log/trivial.hpp>
 #include <boost/format.hpp>
 
-#include <openssl/md5.h>
 #include <iomanip>
 #include <sstream>
 #include <thread>
