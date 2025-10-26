@@ -1,0 +1,32 @@
+# PrusaSlicer build environment (Ubuntu 22.04 with webkit2gtk-4.0)
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    autoconf \
+    automake \
+    libtool \
+    cmake \
+    ninja-build \
+    ccache \
+    libglu1-mesa-dev \
+    libgtk-3-dev \
+    libdbus-1-dev \
+    libwebkit2gtk-4.0-dev \
+    texinfo \
+    ca-certificates \
+    wget \
+    curl \
+    pkg-config \
+    locales \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+WORKDIR /workspace
+CMD ["/bin/bash"]
