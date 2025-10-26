@@ -4434,7 +4434,8 @@ void Tab::save_preset(std::string name /*= ""*/, bool detach)
     if (detach)
         update_description_lines();
 
-    // Trigger cloud sync after saving preset
+    // Mark local presets as modified and trigger cloud sync after saving preset
+    CloudSyncManager::instance().mark_local_presets_modified();
     CloudSyncManager::instance().trigger_auto_sync();
 }
 
@@ -4525,9 +4526,11 @@ void Tab::rename_preset()
     m_presets_choice->update();
     on_presets_changed();
 
-    // Trigger cloud sync after renaming preset
-    if (was_renamed)
+    // Mark local presets as modified and trigger cloud sync after renaming preset
+    if (was_renamed) {
+        CloudSyncManager::instance().mark_local_presets_modified();
         CloudSyncManager::instance().trigger_auto_sync();
+    }
 }
 
 // Called for a currently selected preset.
@@ -4616,7 +4619,8 @@ void Tab::delete_preset()
         this->select_preset("", true);
     }
 
-    // Trigger auto-sync after delete operation completes
+    // Mark local presets as modified and trigger auto-sync after delete operation completes
+    CloudSyncManager::instance().mark_local_presets_modified();
     CloudSyncManager::instance().trigger_auto_sync();
 }
 

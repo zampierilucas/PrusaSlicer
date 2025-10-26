@@ -403,6 +403,17 @@ void CloudSyncManager::trigger_auto_sync()
     }).detach();
 }
 
+void CloudSyncManager::mark_local_presets_modified()
+{
+    if (!m_app_config) {
+        return;
+    }
+
+    time_t now = std::time(nullptr);
+    m_app_config->set("cloud_sync", "last_local_modification", std::to_string(now));
+    BOOST_LOG_TRIVIAL(debug) << boost::format("CloudSync: Marked local presets as modified at %1%") % now;
+}
+
 // Helper methods
 
 bool CloudSyncManager::ensure_remote_structure()

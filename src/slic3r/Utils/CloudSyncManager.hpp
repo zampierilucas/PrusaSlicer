@@ -78,6 +78,10 @@ public:
     // Trigger async sync in background if enabled and not already syncing
     void trigger_auto_sync();
 
+    // Mark that local presets have been modified (save/rename/delete)
+    // This updates the last_local_modification timestamp so sync can detect changes
+    void mark_local_presets_modified();
+
     CloudSyncManager(const CloudSyncManager&) = delete;
     CloudSyncManager& operator=(const CloudSyncManager&) = delete;
 
