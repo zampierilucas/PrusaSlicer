@@ -774,7 +774,8 @@ void GUI_App::post_init()
     CloudSyncManager::instance().initialize(app_config);
 
     // Trigger automatic sync on startup if enabled
-    CloudSyncManager::instance().trigger_auto_sync();
+    // Use trigger_sync_with_first_sync_check() which will show dialog if needed
+    CloudSyncManager::instance().trigger_sync_with_first_sync_check();
 
     if (this->is_gcode_viewer()) {
         if (! this->init_params->input_files.empty())

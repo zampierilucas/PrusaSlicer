@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build"
+BUILD_DIR="$SCRIPT_DIR/build/docker-ninja"
 BINARY="$BUILD_DIR/src/prusa-slicer"
 
 if [ ! -f "$BINARY" ]; then

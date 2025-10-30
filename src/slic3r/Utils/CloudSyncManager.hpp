@@ -63,13 +63,21 @@ public:
     // Create backup before first sync
     bool create_backup(const std::string &backup_reason, std::string &backup_path);
 
+    // First sync user choice (for when both local and remote exist)
+    enum FirstSyncChoice {
+        FIRST_SYNC_AUTO,      // Use automatic conflict resolution
+        FIRST_SYNC_UPLOAD,    // Force upload (user chose to upload)
+        FIRST_SYNC_DOWNLOAD   // Force download (user chose to download)
+    };
+
     // Perform sync operation for bundle config
     // Uses smart conflict detection to automatically decide:
     // - Only local exists → upload
     // - Only remote exists → download
     // - Both exist → compare hashes, then timestamps (newer wins)
     // - Identical → skip
-    SyncFileResult sync();
+    // first_sync_choice: Optional override for first sync when both exist
+    SyncFileResult sync(FirstSyncChoice first_sync_choice = FIRST_SYNC_AUTO);
 
     // Enable/disable auto-sync
     void set_auto_sync_enabled(bool enabled);
@@ -77,6 +85,10 @@ public:
 
     // Trigger async sync in background if enabled and not already syncing
     void trigger_auto_sync();
+
+    // Trigger sync with first-sync dialog if needed (call from main/GUI thread)
+    // This checks for first sync conflict and shows dialog before spawning background thread
+    void trigger_sync_with_first_sync_check();
 
     // Mark that local presets have been modified (save/rename/delete)
     // This updates the last_local_modification timestamp so sync can detect changes

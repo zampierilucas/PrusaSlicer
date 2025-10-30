@@ -8,7 +8,9 @@
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/NotificationManager.hpp"
+#include "slic3r/GUI/CloudSyncDialog.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -180,7 +182,7 @@ CloudSyncManager::FirstSyncInfo CloudSyncManager::check_first_sync()
     return info;
 }
 
-CloudSyncManager::SyncFileResult CloudSyncManager::sync()
+CloudSyncManager::SyncFileResult CloudSyncManager::sync(FirstSyncChoice first_sync_choice)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -190,7 +192,7 @@ CloudSyncManager::SyncFileResult CloudSyncManager::sync()
 
     if (!m_webdav) {
         result.success = false;
-        result.error_msg = "Cloud sync WebDAV client not initialized";
+        result.error_msg = "CloudSync not initialized - check WebDAV URL in Preferences";
         return result;
     }
 
@@ -203,11 +205,13 @@ CloudSyncManager::SyncFileResult CloudSyncManager::sync()
     m_is_syncing = true;
 
     // Check if this is first sync - create backup if both local and remote exist
+    bool is_first_sync_conflict = false;
     if (!has_synced_before()) {
         BOOST_LOG_TRIVIAL(info) << "CloudSync: First sync detected";
 
         FirstSyncInfo info = check_first_sync();
         if (info.state == FIRST_SYNC_BOTH_EXIST) {
+            is_first_sync_conflict = true;
             std::string backup_path;
             if (!create_backup("First sync with conflict resolution", backup_path)) {
                 BOOST_LOG_TRIVIAL(warning) << "CloudSync: Failed to create backup";
@@ -253,9 +257,27 @@ CloudSyncManager::SyncFileResult CloudSyncManager::sync()
         bool exists_remote = get_remote_bundle_info(remote_file);
         time_t remote_mtime = exists_remote ? remote_file.modified_time : 0;
 
-        // Determine what action to take using smart conflict detection
-        action = determine_action(exists_local, exists_remote, local_mtime, remote_mtime,
-                                 local_hash, remote_file.hash);
+        // Determine what action to take
+        // If user made a first-sync choice, use it; otherwise use smart conflict detection
+        if (is_first_sync_conflict && first_sync_choice != FIRST_SYNC_AUTO) {
+            switch (first_sync_choice) {
+                case FIRST_SYNC_UPLOAD:
+                    action = UPLOAD;
+                    BOOST_LOG_TRIVIAL(info) << "CloudSync: Using user choice - UPLOAD";
+                    break;
+                case FIRST_SYNC_DOWNLOAD:
+                    action = DOWNLOAD;
+                    BOOST_LOG_TRIVIAL(info) << "CloudSync: Using user choice - DOWNLOAD";
+                    break;
+                default:
+                    action = SKIP;
+                    break;
+            }
+        } else {
+            // Use smart conflict detection
+            action = determine_action(exists_local, exists_remote, local_mtime, remote_mtime,
+                                     local_hash, remote_file.hash);
+        }
 
         // Execute action
         std::string remote_path = REMOTE_BUNDLE_PATH;
@@ -401,6 +423,62 @@ void CloudSyncManager::trigger_auto_sync()
     std::thread([this]() {
         this->sync();
     }).detach();
+}
+
+void CloudSyncManager::trigger_sync_with_first_sync_check()
+{
+    if (!is_enabled() || m_is_syncing)
+        return;
+
+    // Check if this is first sync with conflict (must be on main thread for dialog)
+    if (!has_synced_before()) {
+        FirstSyncInfo info = check_first_sync();
+
+        if (info.state == FIRST_SYNC_BOTH_EXIST) {
+            BOOST_LOG_TRIVIAL(info) << "CloudSync: First sync conflict detected, showing dialog";
+
+            // Show dialog to ask user which direction to sync
+            // Note: We can't get preset count easily, so we use 1 as placeholder
+            GUI::FirstSyncDirectionDialog dialog(
+                static_cast<wxWindow*>(GUI::wxGetApp().mainframe),
+                1,  // local_file_count placeholder
+                1,  // remote_file_count placeholder
+                info.local_last_modified,
+                info.remote_last_modified
+            );
+
+            if (dialog.ShowModal() == wxID_OK) {
+                FirstSyncChoice choice = FIRST_SYNC_AUTO;
+
+                switch (dialog.get_direction()) {
+                    case GUI::FirstSyncDirectionDialog::DIRECTION_UPLOAD:
+                        choice = FIRST_SYNC_UPLOAD;
+                        BOOST_LOG_TRIVIAL(info) << "CloudSync: User chose to upload to cloud";
+                        break;
+                    case GUI::FirstSyncDirectionDialog::DIRECTION_DOWNLOAD:
+                        choice = FIRST_SYNC_DOWNLOAD;
+                        BOOST_LOG_TRIVIAL(info) << "CloudSync: User chose to download from cloud";
+                        break;
+                    default:
+                        BOOST_LOG_TRIVIAL(warning) << "CloudSync: User cancelled first sync";
+                        return;  // User cancelled
+                }
+
+                // Start sync with user's choice in background thread
+                BOOST_LOG_TRIVIAL(debug) << "CloudSync: Starting sync with user choice";
+                std::thread([this, choice]() {
+                    this->sync(choice);
+                }).detach();
+                return;
+            } else {
+                BOOST_LOG_TRIVIAL(info) << "CloudSync: User cancelled first sync dialog";
+                return;
+            }
+        }
+    }
+
+    // Not a first sync conflict, use regular auto-sync
+    trigger_auto_sync();
 }
 
 void CloudSyncManager::mark_local_presets_modified()
@@ -738,6 +816,13 @@ bool CloudSyncManager::import_bundle_from_sync(
             BOOST_LOG_TRIVIAL(debug) << boost::format("CloudSync: Updated last_local_modification after import: %1% (remote_mtime=%2%)")
                 % timestamp_to_use % remote_mtime;
         }
+
+        // Refresh UI to show newly imported presets
+        // This must run on the main GUI thread, so use CallAfter
+        wxTheApp->CallAfter([]() {
+            BOOST_LOG_TRIVIAL(debug) << "CloudSync: Refreshing UI after preset import";
+            GUI::wxGetApp().load_current_presets();
+        });
 
         return true;
 
